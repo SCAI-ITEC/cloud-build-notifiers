@@ -18,7 +18,7 @@ func TestWriteMessage(t *testing.T) {
 		LogUrl:    "https://some.example.com/log/url?foo=bar",
 	}
 
-	got, err := n.writeMessage(b)
+	got, err := n.writeMessage(b,"foo","bar")
 	if err != nil {
 		t.Fatalf("writeMessage failed: %v", err)
 	}

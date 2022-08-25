@@ -21,6 +21,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
+
+	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go"
 	"github.com/GoogleCloudPlatform/cloud-build-notifiers/lib/notifiers"
 	log "github.com/golang/glog"
@@ -69,6 +72,33 @@ func (g *googlechatNotifier) SetUp(ctx context.Context, cfg *notifiers.Config, _
 	return nil
 }
 
+func (g *googlechatNotifier) retrieveExtraDataWithExponentialBackoff(ctx context.Context, client *firestore.Client, repo_name string, commit string) (string, string, error) {
+	initial_sleep_time, _ := time.ParseDuration("2s")
+	max_retries := 5
+	author := "N/A"
+	message := "N/A"
+
+	for i := 0; i < max_retries; i++ {
+		time.Sleep(initial_sleep_time)
+		ref := client.Collection(repo_name).Doc(commit)
+		doc, err := ref.Get(ctx)
+		
+		if err != nil {
+			if (i != max_retries -1) {
+				log.Infof("Retrying in %q", initial_sleep_time)			
+			}
+			initial_sleep_time *= 2
+		} else {
+			data := doc.Data()
+			author = data["author"].(string)
+			message = data["message"].(string)
+			break	
+		}		
+	}
+
+	return author, message, nil
+}
+
 func (g *googlechatNotifier) SendNotification(ctx context.Context, build *cbpb.Build) error {
 	if !g.filter.Apply(ctx, build) {
 		return nil
@@ -92,19 +122,7 @@ func (g *googlechatNotifier) SendNotification(ctx context.Context, build *cbpb.B
 	repo_name := build.Substitutions["REPO_NAME"]
 	commit := build.Substitutions["SHORT_SHA"]
 
-	ref := client.Collection(repo_name).Doc(commit)
-	doc, err := ref.Get(ctx)
-	author := ""
-	message := ""
-
-	if err != nil {
-		author = "unknown"
-		message = "N/A"
-	} else {
-		data := doc.Data()
-		author = data["author"].(string)
-		message = data["message"].(string)	
-	}
+	author, message, _ := g.retrieveExtraDataWithExponentialBackoff(ctx, client, repo_name, commit)
 	
 	msg, err := g.writeMessage(build,author, message)
 	if err != nil {
@@ -144,6 +162,8 @@ func (g *googlechatNotifier) writeMessage(build *cbpb.Build, author string, mess
 	var icon string
 
 	switch build.Status {
+	case cbpb.Build_WORKING:
+		icon = "https://www.gstatic.com/images/icons/material/system/2x/work_black_48dp.png"
 	case cbpb.Build_SUCCESS:
 		icon = "https://www.gstatic.com/images/icons/material/system/2x/check_circle_googgreen_48dp.png"
 	case cbpb.Build_FAILURE, cbpb.Build_INTERNAL_ERROR:
@@ -163,6 +183,10 @@ func (g *googlechatNotifier) writeMessage(build *cbpb.Build, author string, mess
 	duration := build.GetFinishTime().AsTime().Sub(build.GetStartTime().AsTime())
 	duration_min, duration_sec := int(duration.Minutes()), int(duration.Seconds())-int(duration.Minutes())*60
 	duration_fmt := fmt.Sprintf("%d min %d sec", duration_min, duration_sec)
+
+	if (build.Status == cbpb.Build_WORKING) {
+		duration_fmt = "N/A"
+	}
 
 	card := &chat.Card{
 		Header: &chat.CardHeader{
