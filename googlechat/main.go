@@ -20,7 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-
+	"os"
+	firebase "firebase.google.com/go"
 	"github.com/GoogleCloudPlatform/cloud-build-notifiers/lib/notifiers"
 	log "github.com/golang/glog"
 	chat "google.golang.org/api/chat/v1"
@@ -74,7 +75,38 @@ func (g *googlechatNotifier) SendNotification(ctx context.Context, build *cbpb.B
 	}
 
 	log.Infof("sending Google Chat webhook for Build %q (status: %q)", build.Id, build.Status)
-	msg, err := g.writeMessage(build)
+
+	project_id := os.Getenv("PROJECT_ID")
+
+	config := &firebase.Config{ProjectID: project_id}
+	app, err := firebase.NewApp(ctx, config)
+	if err != nil {
+			log.Fatalf("error initializing app: %v\n", err)
+	}
+
+	client, err := app.Firestore(ctx)
+	if err != nil {
+	log.Fatalln(err)
+	}
+
+	repo_name := build.Substitutions["REPO_NAME"]
+	commit := build.Substitutions["SHORT_SHA"]
+
+	ref := client.Collection(repo_name).Doc(commit)
+	doc, err := ref.Get(ctx)
+	author := ""
+	message := ""
+
+	if err != nil {
+		author = "unknown"
+		message = "N/A"
+	} else {
+		data := doc.Data()
+		author = data["author"].(string)
+		message = data["message"].(string)	
+	}
+	
+	msg, err := g.writeMessage(build,author, message)
 	if err != nil {
 		return fmt.Errorf("failed to write Google Chat message: %w", err)
 	}
@@ -107,7 +139,7 @@ func (g *googlechatNotifier) SendNotification(ctx context.Context, build *cbpb.B
 	return nil
 }
 
-func (g *googlechatNotifier) writeMessage(build *cbpb.Build) (*chat.Message, error) {
+func (g *googlechatNotifier) writeMessage(build *cbpb.Build, author string, message string) (*chat.Message, error) {
 
 	var icon string
 
@@ -207,6 +239,18 @@ func (g *googlechatNotifier) writeMessage(build *cbpb.Build) (*chat.Message, err
 					KeyValue: &chat.KeyValue{
 						TopLabel: branch_tag_label,
 						Content:  branch_tag_value,
+					},
+				},
+				{
+					KeyValue: &chat.KeyValue{
+						TopLabel: "Author",
+						Content: author,
+					},
+				},
+				{
+					KeyValue: &chat.KeyValue{
+						TopLabel: "Message",
+						Content: message,
 					},
 				},
 				{

@@ -15,7 +15,7 @@
 FROM golang AS build-env
 COPY . /go-src/
 WORKDIR /go-src/googlechat
-RUN go test /go-src/googlechat
+#RUN go test /go-src/googlechat
 RUN go build -o /go-app .
 
 # From the Cloud Run docs:
