@@ -6,6 +6,7 @@ Original Doc is [here](./README_original.md)
 
 For this to work your pipeline must add this information to a firestore collection named after the cloud source repository and with key equal to short sha of commit.
 
+![schema](./images//cloud-build-notification.drawio.png)
 
 ## Build and Installation
 
