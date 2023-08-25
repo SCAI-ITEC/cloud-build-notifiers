@@ -249,12 +249,6 @@ func (g *googlechatNotifier) writeMessage(build *cbpb.Build, author string, mess
 			Widgets: []*chat.WidgetMarkup{
 				{
 					KeyValue: &chat.KeyValue{
-						TopLabel: "Trigger",
-						Content:  trigger_name,
-					},
-				},
-				{
-					KeyValue: &chat.KeyValue{
 						TopLabel: "Repo",
 						Content:  repo_name,
 					},
@@ -267,6 +261,12 @@ func (g *googlechatNotifier) writeMessage(build *cbpb.Build, author string, mess
 				},
 				{
 					KeyValue: &chat.KeyValue{
+						TopLabel: "Commit Sha",
+						Content:  commit,
+					},
+				},
+				{
+					KeyValue: &chat.KeyValue{
 						TopLabel: "Author",
 						Content: author,
 					},
@@ -275,12 +275,6 @@ func (g *googlechatNotifier) writeMessage(build *cbpb.Build, author string, mess
 					KeyValue: &chat.KeyValue{
 						TopLabel: "Message",
 						Content: message,
-					},
-				},
-				{
-					KeyValue: &chat.KeyValue{
-						TopLabel: "Commit",
-						Content:  commit,
 					},
 				},
 			},
