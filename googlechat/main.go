@@ -72,15 +72,16 @@ func (g *googlechatNotifier) SetUp(ctx context.Context, cfg *notifiers.Config, _
 	return nil
 }
 
-func (g *googlechatNotifier) retrieveExtraDataWithExponentialBackoff(ctx context.Context, client *firestore.Client, repo_name string, commit string) (string, string, error) {
+func (g *googlechatNotifier) retrieveExtraDataWithExponentialBackoff(ctx context.Context, client *firestore.Client, repo_name string, build_id string) (string, string, string,error) {
 	initial_sleep_time, _ := time.ParseDuration("2s")
 	max_retries := 5
 	author := "N/A"
 	message := "N/A"
+	latest_tag := "N/A"
 
 	for i := 0; i < max_retries; i++ {
 		time.Sleep(initial_sleep_time)
-		ref := client.Collection(repo_name).Doc(commit)
+		ref := client.Collection(repo_name).Doc(build_id)
 		doc, err := ref.Get(ctx)
 		
 		if err != nil {
@@ -92,11 +93,16 @@ func (g *googlechatNotifier) retrieveExtraDataWithExponentialBackoff(ctx context
 			data := doc.Data()
 			author = data["author"].(string)
 			message = data["message"].(string)
+
+			if (data["latest_tag"] != nil) {
+				latest_tag = data["latest_tag"].(string)
+			}
+			
 			break	
 		}		
 	}
 
-	return author, message, nil
+	return author, message, latest_tag ,nil
 }
 
 func (g *googlechatNotifier) SendNotification(ctx context.Context, build *cbpb.Build) error {
@@ -104,7 +110,7 @@ func (g *googlechatNotifier) SendNotification(ctx context.Context, build *cbpb.B
 		return nil
 	}
 
-	log.Infof("sending Google Chat webhook for Build %q (status: %q)", build.Id, build.Status)
+	log.Infof("sending Google Chat webhook for Build %q (status: %q) ", build.Id, build.Status)
 
 	project_id := os.Getenv("PROJECT_ID")
 
@@ -120,11 +126,11 @@ func (g *googlechatNotifier) SendNotification(ctx context.Context, build *cbpb.B
 	}
 
 	repo_name := build.Substitutions["REPO_NAME"]
-	commit := build.Substitutions["SHORT_SHA"]
+	//commit := build.Substitutions["SHORT_SHA"]
 
-	author, message, _ := g.retrieveExtraDataWithExponentialBackoff(ctx, client, repo_name, commit)
+	author, message, latest_tag , _ := g.retrieveExtraDataWithExponentialBackoff(ctx, client, repo_name, build.Id)
 	
-	msg, err := g.writeMessage(build,author, message)
+	msg, err := g.writeMessage(build, author, message,latest_tag)
 	if err != nil {
 		return fmt.Errorf("failed to write Google Chat message: %w", err)
 	}
@@ -157,7 +163,7 @@ func (g *googlechatNotifier) SendNotification(ctx context.Context, build *cbpb.B
 	return nil
 }
 
-func (g *googlechatNotifier) writeMessage(build *cbpb.Build, author string, message string) (*chat.Message, error) {
+func (g *googlechatNotifier) writeMessage(build *cbpb.Build, author string, message string, latest_tag string) (*chat.Message, error) {
 
 	var icon string
 
@@ -257,6 +263,12 @@ func (g *googlechatNotifier) writeMessage(build *cbpb.Build, author string, mess
 					KeyValue: &chat.KeyValue{
 						TopLabel: branch_tag_label,
 						Content:  branch_tag_value,
+					},
+				},
+				{
+					KeyValue: &chat.KeyValue{
+						TopLabel: "Latest Tag",
+						Content: latest_tag,
 					},
 				},
 				{
